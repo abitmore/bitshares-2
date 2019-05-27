@@ -23,10 +23,11 @@
  */
 #pragma once
 
-#include <graphene/chain/protocol/transaction.hpp>
+#include <graphene/protocol/transaction.hpp>
 #include <graphene/chain/transaction_evaluation_state.hpp>
 
 #include <graphene/db/generic_index.hpp>
+#include <boost/multi_index/composite_key.hpp>
 
 namespace graphene { namespace chain {
 
@@ -50,8 +51,10 @@ class proposal_object : public abstract_object<proposal_object>
       flat_set<account_id_type>     required_owner_approvals;
       flat_set<account_id_type>     available_owner_approvals;
       flat_set<public_key_type>     available_key_approvals;
+      account_id_type               proposer;
+      std::string                   fail_reason;
 
-      bool is_authorized_to_execute(database& db)const;
+      bool is_authorized_to_execute(database& db) const;
 };
 
 /**
@@ -70,12 +73,17 @@ class required_approval_index : public secondary_index
    public:
       virtual void object_inserted( const object& obj ) override;
       virtual void object_removed( const object& obj ) override;
-      virtual void about_to_modify( const object& before ) override{};
-      virtual void object_modified( const object& after  ) override{};
-
-      void remove( account_id_type a, proposal_id_type p );
+      virtual void about_to_modify( const object& before ) override;
+      virtual void object_modified( const object& after  ) override;
 
       map<account_id_type, set<proposal_id_type> > _account_to_proposals;
+
+   private:
+      void remove( account_id_type a, proposal_id_type p );
+      void insert_or_remove_delta( proposal_id_type p, const flat_set<account_id_type>& before,
+                                   const flat_set<account_id_type>& after );
+      flat_set<account_id_type> available_active_before_modify;
+      flat_set<account_id_type> available_owner_before_modify;
 };
 
 struct by_expiration{};
@@ -83,14 +91,22 @@ typedef boost::multi_index_container<
    proposal_object,
    indexed_by<
       ordered_unique< tag< by_id >, member< object, object_id_type, &object::id > >,
-      ordered_non_unique< tag< by_expiration >, member< proposal_object, time_point_sec, &proposal_object::expiration_time > >
+      //ordered_non_unique< tag< by_expiration >, member< proposal_object, time_point_sec, &proposal_object::expiration_time > >
+      ordered_unique<tag<by_expiration>,
+         composite_key<proposal_object,
+            member<proposal_object, time_point_sec, &proposal_object::expiration_time>,
+            member< object, object_id_type, &object::id >
+         >
+      >
    >
 > proposal_multi_index_container;
 typedef generic_index<proposal_object, proposal_multi_index_container> proposal_index;
 
 } } // graphene::chain
 
+MAP_OBJECT_ID_TO_TYPE(graphene::chain::proposal_object)
+
 FC_REFLECT_DERIVED( graphene::chain::proposal_object, (graphene::chain::object),
                     (expiration_time)(review_period_time)(proposed_transaction)(required_active_approvals)
                     (available_active_approvals)(required_owner_approvals)(available_owner_approvals)
-                    (available_key_approvals) )
+                    (available_key_approvals)(proposer)(fail_reason) )

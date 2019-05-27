@@ -24,14 +24,10 @@
 #pragma once
 
 #include <fc/exception/exception.hpp>
-#include <graphene/chain/protocol/protocol.hpp>
-
-#define GRAPHENE_ASSERT( expr, exc_type, FORMAT, ... )                \
-   FC_MULTILINE_MACRO_BEGIN                                           \
-   if( !(expr) )                                                      \
-      FC_THROW_EXCEPTION( exc_type, FORMAT, __VA_ARGS__ );            \
-   FC_MULTILINE_MACRO_END
-
+#include <graphene/protocol/exceptions.hpp>
+#include <graphene/protocol/fee_schedule.hpp>
+#include <graphene/protocol/operations.hpp>
+#include <graphene/chain/types.hpp>
 
 #define GRAPHENE_DECLARE_OP_BASE_EXCEPTIONS( op_name )                \
    FC_DECLARE_DERIVED_EXCEPTION(                                      \
@@ -65,28 +61,34 @@
       msg                                                             \
       )
 
+#define GRAPHENE_TRY_NOTIFY( signal, ... )                                    \
+   try                                                                        \
+   {                                                                          \
+      signal( __VA_ARGS__ );                                                  \
+   }                                                                          \
+   catch( const graphene::chain::plugin_exception& e )                        \
+   {                                                                          \
+      elog( "Caught plugin exception: ${e}", ("e", e.to_detail_string() ) );  \
+      throw;                                                                  \
+   }                                                                          \
+   catch( ... )                                                               \
+   {                                                                          \
+      wlog( "Caught unexpected exception in plugin" );                        \
+   }
+
 namespace graphene { namespace chain {
 
    FC_DECLARE_EXCEPTION( chain_exception, 3000000, "blockchain exception" )
    FC_DECLARE_DERIVED_EXCEPTION( database_query_exception,          graphene::chain::chain_exception, 3010000, "database query exception" )
    FC_DECLARE_DERIVED_EXCEPTION( block_validate_exception,          graphene::chain::chain_exception, 3020000, "block validation exception" )
-   FC_DECLARE_DERIVED_EXCEPTION( transaction_exception,             graphene::chain::chain_exception, 3030000, "transaction validation exception" )
    FC_DECLARE_DERIVED_EXCEPTION( operation_validate_exception,      graphene::chain::chain_exception, 3040000, "operation validation exception" )
    FC_DECLARE_DERIVED_EXCEPTION( operation_evaluate_exception,      graphene::chain::chain_exception, 3050000, "operation evaluation exception" )
    FC_DECLARE_DERIVED_EXCEPTION( utility_exception,                 graphene::chain::chain_exception, 3060000, "utility method exception" )
    FC_DECLARE_DERIVED_EXCEPTION( undo_database_exception,           graphene::chain::chain_exception, 3070000, "undo database exception" )
    FC_DECLARE_DERIVED_EXCEPTION( unlinkable_block_exception,        graphene::chain::chain_exception, 3080000, "unlinkable block" )
    FC_DECLARE_DERIVED_EXCEPTION( black_swan_exception,              graphene::chain::chain_exception, 3090000, "black swan" )
+   FC_DECLARE_DERIVED_EXCEPTION( plugin_exception,                  graphene::chain::chain_exception, 3100000, "plugin exception" )
 
-   FC_DECLARE_DERIVED_EXCEPTION( tx_missing_active_auth,            graphene::chain::transaction_exception, 3030001, "missing required active authority" )
-   FC_DECLARE_DERIVED_EXCEPTION( tx_missing_owner_auth,             graphene::chain::transaction_exception, 3030002, "missing required owner authority" )
-   FC_DECLARE_DERIVED_EXCEPTION( tx_missing_other_auth,             graphene::chain::transaction_exception, 3030003, "missing required other authority" )
-   FC_DECLARE_DERIVED_EXCEPTION( tx_irrelevant_sig,                 graphene::chain::transaction_exception, 3030004, "irrelevant signature included" )
-   FC_DECLARE_DERIVED_EXCEPTION( tx_duplicate_sig,                  graphene::chain::transaction_exception, 3030005, "duplicate signature included" )
-   FC_DECLARE_DERIVED_EXCEPTION( invalid_committee_approval,        graphene::chain::transaction_exception, 3030006, "committee account cannot directly approve transaction" )
-   FC_DECLARE_DERIVED_EXCEPTION( insufficient_fee,                  graphene::chain::transaction_exception, 3030007, "insufficient fee" )
-
-   FC_DECLARE_DERIVED_EXCEPTION( invalid_pts_address,               graphene::chain::utility_exception, 3060001, "invalid pts address" )
    FC_DECLARE_DERIVED_EXCEPTION( insufficient_feeds,                graphene::chain::chain_exception, 37006, "insufficient feeds" )
 
    FC_DECLARE_DERIVED_EXCEPTION( pop_empty_chain,                   graphene::chain::undo_database_exception, 3070001, "there are no blocks to pop" )
@@ -104,6 +106,9 @@ namespace graphene { namespace chain {
    GRAPHENE_DECLARE_OP_BASE_EXCEPTIONS( account_create );
    GRAPHENE_DECLARE_OP_EVALUATE_EXCEPTION( max_auth_exceeded, account_create, 1, "Exceeds max authority fan-out" )
    GRAPHENE_DECLARE_OP_EVALUATE_EXCEPTION( auth_account_not_found, account_create, 2, "Auth account not found" )
+   GRAPHENE_DECLARE_OP_EVALUATE_EXCEPTION( buyback_incorrect_issuer, account_create, 3, "Incorrect issuer specified for account" )
+   GRAPHENE_DECLARE_OP_EVALUATE_EXCEPTION( buyback_already_exists, account_create, 4, "Cannot create buyback for asset which already has buyback" )
+   GRAPHENE_DECLARE_OP_EVALUATE_EXCEPTION( buyback_too_many_markets, account_create, 5, "Too many buyback markets" )
 
    GRAPHENE_DECLARE_OP_BASE_EXCEPTIONS( account_update );
    GRAPHENE_DECLARE_OP_EVALUATE_EXCEPTION( max_auth_exceeded, account_update, 1, "Exceeds max authority fan-out" )

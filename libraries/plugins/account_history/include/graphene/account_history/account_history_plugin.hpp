@@ -26,10 +26,15 @@
 #include <graphene/app/plugin.hpp>
 #include <graphene/chain/database.hpp>
 
+#include <graphene/chain/operation_history_object.hpp>
+
 #include <fc/thread/future.hpp>
 
 namespace graphene { namespace account_history {
-using namespace chain;
+   using namespace chain;
+   //using namespace graphene::db;
+   //using boost::multi_index_container;
+   //using namespace boost::multi_index;
 
 //
 // Plugins should #define their SPACE_ID's so plugins with
@@ -42,13 +47,12 @@ using namespace chain;
 // time.
 //
 #ifndef ACCOUNT_HISTORY_SPACE_ID
-#define ACCOUNT_HISTORY_SPACE_ID 5
+#define ACCOUNT_HISTORY_SPACE_ID 4
 #endif
 
 enum account_history_object_type
 {
-   key_account_object_type = 0,
-   bucket_object_type = 1 ///< used in market_history_plugin
+   key_account_object_type = 0
 };
 
 
@@ -77,4 +81,3 @@ class account_history_plugin : public graphene::app::plugin
 };
 
 } } //graphene::account_history
-

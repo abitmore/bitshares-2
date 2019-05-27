@@ -23,10 +23,17 @@
  */
 #pragma once
 
-#include <graphene/app/application.hpp>
-#include <graphene/chain/database.hpp>
 #include <fc/io/json.hpp>
-#include <fc/smart_ref_impl.hpp>
+
+#include <graphene/protocol/types.hpp>
+#include <graphene/protocol/market.hpp>
+
+#include <graphene/chain/committee_member_object.hpp>
+#include <graphene/chain/worker_object.hpp>
+#include <graphene/chain/operation_history_object.hpp>
+#include <graphene/chain/database.hpp>
+#include <graphene/app/application.hpp>
+#include <graphene/market_history/market_history_plugin.hpp>
 
 #include <iostream>
 
@@ -103,6 +110,29 @@ extern uint32_t GRAPHENE_TESTING_GENESIS_TIMESTAMP;
 #define REQUIRE_OP_VALIDATION_FAILURE( op, field, value ) \
    REQUIRE_OP_VALIDATION_FAILURE_2( op, field, value, fc::exception )
 
+#define REQUIRE_EXCEPTION_WITH_TEXT(op, exc_text)                 \
+{                                                                 \
+   try                                                            \
+   {                                                              \
+      op;                                                         \
+      BOOST_FAIL(std::string("Expected an exception with \"") +   \
+         std::string(exc_text) +                                  \
+         std::string("\" but none thrown"));                      \
+   }                                                              \
+   catch (fc::exception& ex)                                      \
+   {                                                              \
+      std::string what = ex.to_string(                            \
+            fc::log_level(fc::log_level::all));                   \
+      if (what.find(exc_text) == std::string::npos)               \
+      {                                                           \
+         BOOST_FAIL( std::string("Expected \"") +                 \
+            std::string(exc_text) +                               \
+            std::string("\" but got \"") +                        \
+            std::string(what) );                                  \
+      }                                                           \
+   }                                                              \
+}                                                                 \
+
 #define REQUIRE_THROW_WITH_VALUE_2(op, field, value, exc_type) \
 { \
    auto bak = op.field; \
@@ -124,23 +154,30 @@ extern uint32_t GRAPHENE_TESTING_GENESIS_TIMESTAMP;
 
 #define PREP_ACTOR(name) \
    fc::ecc::private_key name ## _private_key = generate_private_key(BOOST_PP_STRINGIZE(name));   \
-   public_key_type name ## _public_key = name ## _private_key.get_public_key();
+   graphene::chain::public_key_type name ## _public_key = name ## _private_key.get_public_key(); \
+   BOOST_CHECK( name ## _public_key != public_key_type() );
 
 #define ACTOR(name) \
    PREP_ACTOR(name) \
-   const auto& name = create_account(BOOST_PP_STRINGIZE(name), name ## _public_key); \
-   account_id_type name ## _id = name.id; (void)name ## _id;
+   const auto name = create_account(BOOST_PP_STRINGIZE(name), name ## _public_key); \
+   graphene::chain::account_id_type name ## _id = name.id; (void)name ## _id;
 
 #define GET_ACTOR(name) \
    fc::ecc::private_key name ## _private_key = generate_private_key(BOOST_PP_STRINGIZE(name)); \
    const account_object& name = get_account(BOOST_PP_STRINGIZE(name)); \
-   account_id_type name ## _id = name.id; \
+   graphene::chain::account_id_type name ## _id = name.id; \
    (void)name ##_id
 
 #define ACTORS_IMPL(r, data, elem) ACTOR(elem)
 #define ACTORS(names) BOOST_PP_SEQ_FOR_EACH(ACTORS_IMPL, ~, names)
 
 namespace graphene { namespace chain {
+
+class clearable_block : public signed_block {
+public:
+   /** @brief Clears internal cached values like ID, signing key, Merkle root etc. */
+   void clear();
+};
 
 struct database_fixture {
    // the reason we use an app is to exercise the indexes of built-in
@@ -158,14 +195,15 @@ struct database_fixture {
    optional<fc::temp_directory> data_dir;
    bool skip_key_index_test = false;
    uint32_t anon_acct_count;
+   bool hf1270 = false;
 
-   database_fixture();
+    database_fixture(const fc::time_point_sec &initial_timestamp =
+                        fc::time_point_sec(GRAPHENE_TESTING_GENESIS_TIMESTAMP));
    ~database_fixture();
 
    static fc::ecc::private_key generate_private_key(string seed);
    string generate_anon_acct_name();
    static void verify_asset_supplies( const database& db );
-   void verify_account_history_plugin_index( )const;
    void open_database();
    signed_block generate_block(uint32_t skip = ~0,
                                const fc::ecc::private_key& key = generate_private_key("null_key"),
@@ -180,8 +218,9 @@ struct database_fixture {
    /**
     * @brief Generates blocks until the head block time matches or exceeds timestamp
     * @param timestamp target time to generate blocks until
+    * @return number of blocks generated
     */
-   void generate_blocks(fc::time_point_sec timestamp, bool miss_intermediate_blocks = true);
+   uint32_t generate_blocks(fc::time_point_sec timestamp, bool miss_intermediate_blocks = true, uint32_t skip = ~0);
 
    account_create_operation make_account(
       const std::string& name = "nathan",
@@ -192,7 +231,7 @@ struct database_fixture {
       const std::string& name,
       const account_object& registrar,
       const account_object& referrer,
-      uint8_t referrer_percent = 100,
+      uint16_t referrer_percent = 100,
       public_key_type key = public_key_type()
       );
 
@@ -205,28 +244,61 @@ struct database_fixture {
    void update_feed_producers(const asset_object& mia, flat_set<account_id_type> producers);
    void publish_feed(asset_id_type mia, account_id_type by, const price_feed& f)
    { publish_feed(mia(db), by(db), f); }
+
+   /***
+    * @brief helper method to add a price feed
+    *
+    * Adds a price feed for asset2, pushes the transaction, and generates the block
+    *
+    * @param publisher who is publishing the feed
+    * @param asset1 the base asset
+    * @param amount1 the amount of the base asset
+    * @param asset2 the quote asset
+    * @param amount2 the amount of the quote asset
+    * @param core_id id of core (helps with core_exchange_rate)
+    */
+   void publish_feed(const account_id_type& publisher,
+         const asset_id_type& asset1, int64_t amount1,
+         const asset_id_type& asset2, int64_t amount2,
+         const asset_id_type& core_id);
+
    void publish_feed(const asset_object& mia, const account_object& by, const price_feed& f);
-   const call_order_object* borrow(account_id_type who, asset what, asset collateral)
-   { return borrow(who(db), what, collateral); }
-   const call_order_object* borrow(const account_object& who, asset what, asset collateral);
-   void cover(account_id_type who, asset what, asset collateral_freed)
-   { cover(who(db), what, collateral_freed); }
-   void cover(const account_object& who, asset what, asset collateral_freed);
+
+   const call_order_object* borrow( account_id_type who, asset what, asset collateral,
+                                    optional<uint16_t> target_cr = {} )
+   { return borrow(who(db), what, collateral, target_cr); }
+   const call_order_object* borrow( const account_object& who, asset what, asset collateral,
+                                    optional<uint16_t> target_cr = {} );
+   void cover(account_id_type who, asset what, asset collateral_freed,
+                                    optional<uint16_t> target_cr = {} )
+   { cover(who(db), what, collateral_freed, target_cr); }
+   void cover(const account_object& who, asset what, asset collateral_freed,
+                                    optional<uint16_t> target_cr = {} );
+   void bid_collateral(const account_object& who, const asset& to_bid, const asset& to_cover);
 
    const asset_object& get_asset( const string& symbol )const;
    const account_object& get_account( const string& name )const;
    const asset_object& create_bitasset(const string& name,
                                        account_id_type issuer = GRAPHENE_WITNESS_ACCOUNT,
                                        uint16_t market_fee_percent = 100 /*1%*/,
-                                       uint16_t flags = charge_market_fee);
+                                       uint16_t flags = charge_market_fee,
+                                       uint16_t precision = 2,
+                                       asset_id_type backing_asset = {},
+                                       share_type max_supply = GRAPHENE_MAX_SHARE_SUPPLY );
    const asset_object& create_prediction_market(const string& name,
                                        account_id_type issuer = GRAPHENE_WITNESS_ACCOUNT,
                                        uint16_t market_fee_percent = 100 /*1%*/,
-                                       uint16_t flags = charge_market_fee);
+                                       uint16_t flags = charge_market_fee,
+                                       uint16_t precision = GRAPHENE_BLOCKCHAIN_PRECISION_DIGITS,
+                                       asset_id_type backing_asset = {});
    const asset_object& create_user_issued_asset( const string& name );
    const asset_object& create_user_issued_asset( const string& name,
                                                  const account_object& issuer,
-                                                 uint16_t flags );
+                                                 uint16_t flags,
+                                                 const price& core_exchange_rate = price(asset(1, asset_id_type(1)), asset(1)),
+                                                 uint8_t precision = 2 /* traditional precision for tests */,
+                                                 uint16_t market_fee_percent = 0,
+                                                 additional_asset_options_t options = additional_asset_options_t());
    void issue_uia( const account_object& recipient, asset amount );
    void issue_uia( account_id_type recipient_id, asset amount );
 
@@ -239,7 +311,7 @@ struct database_fixture {
       const string& name,
       const account_object& registrar,
       const account_object& referrer,
-      uint8_t referrer_percent = 100,
+      uint16_t referrer_percent = 100,
       const public_key_type& key = public_key_type()
       );
 
@@ -248,23 +320,34 @@ struct database_fixture {
       const private_key_type& key,
       const account_id_type& registrar_id = account_id_type(),
       const account_id_type& referrer_id = account_id_type(),
-      uint8_t referrer_percent = 100
+      uint16_t referrer_percent = 100
       );
 
    const committee_member_object& create_committee_member( const account_object& owner );
    const witness_object& create_witness(account_id_type owner,
-                                        const fc::ecc::private_key& signing_private_key = generate_private_key("null_key"));
+                                        const fc::ecc::private_key& signing_private_key = generate_private_key("null_key"),
+                                        uint32_t skip_flags = ~0);
    const witness_object& create_witness(const account_object& owner,
-                                        const fc::ecc::private_key& signing_private_key = generate_private_key("null_key"));
+                                        const fc::ecc::private_key& signing_private_key = generate_private_key("null_key"),
+                                        uint32_t skip_flags = ~0);
+   const worker_object& create_worker(account_id_type owner, const share_type daily_pay = 1000, const fc::microseconds& duration = fc::days(2));
    uint64_t fund( const account_object& account, const asset& amount = asset(500000) );
    digest_type digest( const transaction& tx );
    void sign( signed_transaction& trx, const fc::ecc::private_key& key );
-   const limit_order_object* create_sell_order( account_id_type user, const asset& amount, const asset& recv );
-   const limit_order_object* create_sell_order( const account_object& user, const asset& amount, const asset& recv );
+   const limit_order_object* create_sell_order( account_id_type user, const asset& amount, const asset& recv,
+                                                const time_point_sec order_expiration = time_point_sec::maximum(),
+                                                const price& fee_core_exchange_rate = price::unit_price() );
+   const limit_order_object* create_sell_order( const account_object& user, const asset& amount, const asset& recv,
+                                                const time_point_sec order_expiration = time_point_sec::maximum(),
+                                                const price& fee_core_exchange_rate = price::unit_price() );
    asset cancel_limit_order( const limit_order_object& order );
    void transfer( account_id_type from, account_id_type to, const asset& amount, const asset& fee = asset() );
    void transfer( const account_object& from, const account_object& to, const asset& amount, const asset& fee = asset() );
    void fund_fee_pool( const account_object& from, const asset_object& asset_to_fund, const share_type amount );
+   /**
+    * NOTE: This modifies the database directly. You will probably have to call this each time you
+    * finish creating a block
+    */
    void enable_fees();
    void change_fees( const flat_set< fee_parameters >& new_params, uint32_t new_scale = 0 );
    void upgrade_to_lifetime_member( account_id_type account );
@@ -278,6 +361,12 @@ struct database_fixture {
    void print_joint_market( const string& syma, const string& symb )const;
    int64_t get_balance( account_id_type account, asset_id_type a )const;
    int64_t get_balance( const account_object& account, const asset_object& a )const;
+
+   int64_t get_market_fee_reward( account_id_type account, asset_id_type asset )const;
+   int64_t get_market_fee_reward( const account_object& account, const asset_object& asset )const;
+
+   vector< operation_history_object > get_operation_history( account_id_type account_id )const;
+   vector< graphene::market_history::order_history_object > get_market_order_history( asset_id_type a, asset_id_type b )const;
 };
 
 namespace test {

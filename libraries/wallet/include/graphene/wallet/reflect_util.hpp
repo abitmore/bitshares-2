@@ -37,6 +37,21 @@ struct static_variant_map
 
 namespace impl {
 
+std::string clean_name( const std::string& name )
+{
+   const static std::string prefix = "graphene::protocol::";
+   const static std::string suffix = "_operation";
+   // graphene::protocol::.*_operation
+   if(    (name.size() >= prefix.size() + suffix.size())
+       && (name.substr( 0, prefix.size() ) == prefix)
+       && (name.substr( name.size()-suffix.size(), suffix.size() ) == suffix )
+     )
+        return name.substr( prefix.size(), name.size() - prefix.size() - suffix.size() );
+
+   wlog( "don't know how to clean name: ${name}", ("name", name) );
+   return name;
+}
+
 struct static_variant_map_visitor
 {
    static_variant_map_visitor() {}
@@ -46,14 +61,14 @@ struct static_variant_map_visitor
    template< typename T >
    result_type operator()( const T& dummy )
    {
-      assert( which == m.which_to_name.size() );
-      std::string name = js_name<T>::name();
+      FC_ASSERT( which == m.which_to_name.size(), "This should not happen" );
+      std::string name = clean_name( fc::get_typename<T>::name() );
       m.name_to_which[ name ] = which;
       m.which_to_name.push_back( name );
    }
 
    static_variant_map m;
-   int which;
+   uint16_t which; // 16 bit should be practically enough
 };
 
 template< typename StaticVariant >
@@ -65,24 +80,25 @@ struct from_which_visitor
    result_type operator()( const Member& dummy )
    {
       Member result;
-      from_variant( v, result );
+      from_variant( v, result, _max_depth );
       return result;    // converted from StaticVariant to Result automatically due to return type
    }
 
    const variant& v;
+   const uint32_t _max_depth;
 
-   from_which_visitor( const variant& _v ) : v(_v) {}
+   from_which_visitor( const variant& _v, uint32_t max_depth ) : v(_v), _max_depth(max_depth) {}
 };
 
 } // namespace impl
 
 template< typename T >
-T from_which_variant( int which, const variant& v )
+T from_which_variant( int which, const variant& v, uint32_t max_depth )
 {
    // Parse a variant for a known which()
    T dummy;
    dummy.set_which( which );
-   impl::from_which_visitor< T > vtor(v);
+   impl::from_which_visitor< T > vtor(v, max_depth);
    return dummy.visit( vtor );
 }
 
@@ -91,6 +107,7 @@ static_variant_map create_static_variant_map()
 {
    T dummy;
    int n = dummy.count();
+   FC_ASSERT( n <= std::numeric_limits<uint16_t>::max(), "Too many items in this static_variant" );
    impl::static_variant_map_visitor vtor;
    for( int i=0; i<n; i++ )
    {

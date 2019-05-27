@@ -23,55 +23,18 @@
  */
 #pragma once
 #include <graphene/chain/exceptions.hpp>
-#include <graphene/chain/protocol/operations.hpp>
+#include <graphene/chain/transaction_evaluation_state.hpp>
+#include <graphene/protocol/operations.hpp>
 
 namespace graphene { namespace chain {
 
    class database;
-   struct signed_transaction;
    class generic_evaluator;
    class transaction_evaluation_state;
-
-   /**
-    * Observes evaluation events, providing
-    * pre- and post-evaluation hooks.
-    *
-    * Every call to pre_evaluate() is followed by
-    * a call to either post_evaluate() or evaluation_failed().
-    *
-    * A subclass which needs to do a "diff" can gather some
-    * "before" state into its members in pre_evaluate(),
-    * then post_evaluate() will have both "before"
-    * and "after" state, and will be able to do the diff.
-    *
-    * evaluation_failed() is a cleanup method which notifies
-    * the subclass to "throw away" the diff.
-    */
-   class evaluation_observer
-   {
-   public:
-      virtual ~evaluation_observer(){}
-
-      virtual void pre_evaluate(const transaction_evaluation_state& eval_state,
-                                const operation& op,
-                                bool apply,
-                                generic_evaluator* ge)
-      {}
-
-      virtual void post_evaluate(const transaction_evaluation_state& eval_state,
-                                 const operation& op,
-                                 bool apply,
-                                 generic_evaluator* ge,
-                                 const operation_result& result)
-      {}
-
-      virtual void evaluation_failed(const transaction_evaluation_state& eval_state,
-                                     const operation& op,
-                                     bool apply,
-                                     generic_evaluator* ge,
-                                     const operation_result& result)
-      {}
-   };
+   class account_object;
+   class account_statistics_object;
+   class asset_object;
+   class asset_dynamic_data_object;
 
    class generic_evaluator
    {
@@ -133,9 +96,20 @@ namespace graphene { namespace chain {
        *
        * Rather than returning a value, this method fills in core_fee_paid field.
        */
-      void convert_fee();
+      virtual void convert_fee();
 
       object_id_type get_relative_id( object_id_type rel_id )const;
+
+      /**
+       * pay_fee() for FBA subclass should simply call this method
+       */
+      void pay_fba_fee( uint64_t fba_id );
+
+      // the next two functions are helpers that allow template functions declared in this 
+      // header to call db() without including database.hpp, which would
+      // cause a circular dependency
+      share_type calculate_fee_for_operation(const operation& op) const;
+      void db_adjust_balance(const account_id_type& fee_payer, asset fee_from_account);
 
       asset                            fee_from_account;
       share_type                       core_fee_paid;
@@ -151,8 +125,6 @@ namespace graphene { namespace chain {
    public:
       virtual ~op_evaluator(){}
       virtual operation_result evaluate(transaction_evaluation_state& eval_state, const operation& op, bool apply) = 0;
-
-      vector<evaluation_observer*> eval_observers;
    };
 
    template<typename T>
@@ -161,57 +133,8 @@ namespace graphene { namespace chain {
    public:
       virtual operation_result evaluate(transaction_evaluation_state& eval_state, const operation& op, bool apply = true) override
       {
-         // fc::exception from observers are suppressed.
-         // fc::exception from evaluation is deferred (re-thrown
-         // after all observers receive evaluation_failed)
-
          T eval;
-         shared_ptr<fc::exception> evaluation_exception;
-         size_t observer_count = 0;
-         operation_result result;
-
-         for( const auto& obs : eval_observers )
-         {
-            try
-            {
-               obs->pre_evaluate(eval_state, op, apply, &eval);
-            }
-            catch( const fc::exception& e )
-            {
-               elog( "suppressed exception in observer pre method:\n${e}", ( "e", e.to_detail_string() ) );
-            }
-            observer_count++;
-         }
-
-         try
-         {
-            result = eval.start_evaluate(eval_state, op, apply);
-         }
-         catch( const fc::exception& e )
-         {
-            evaluation_exception = e.dynamic_copy_exception();
-         }
-
-         while( observer_count > 0 )
-         {
-            --observer_count;
-            const auto& obs = eval_observers[observer_count];
-            try
-            {
-               if( evaluation_exception )
-                  obs->post_evaluate(eval_state, op, apply, &eval, result);
-               else
-                  obs->evaluation_failed(eval_state, op, apply, &eval, result);
-            }
-            catch( const fc::exception& e )
-            {
-               elog( "suppressed exception in observer post method:\n${e}", ( "e", e.to_detail_string() ) );
-            }
-         }
-
-         if( evaluation_exception )
-            evaluation_exception->dynamic_rethrow_exception();
-         return result;
+         return eval.start_evaluate(eval_state, op, apply);
       }
    };
 
@@ -227,10 +150,14 @@ namespace graphene { namespace chain {
          const auto& op = o.get<typename DerivedEvaluator::operation_type>();
 
          prepare_fee(op.fee_payer(), op.fee);
-         GRAPHENE_ASSERT( core_fee_paid >= db().current_fee_schedule().calculate_fee( op ).amount,
-                    insufficient_fee,
-                    "Insufficient Fee Paid",
-                    ("core_fee_paid",core_fee_paid)("required",db().current_fee_schedule().calculate_fee( op ).amount) );
+         if( !trx_state->skip_fee_schedule_check )
+         {
+            share_type required_fee = calculate_fee_for_operation(op);
+            GRAPHENE_ASSERT( core_fee_paid >= required_fee,
+                       insufficient_fee,
+                       "Insufficient Fee Paid",
+                       ("core_fee_paid",core_fee_paid)("required", required_fee) );
+         }
 
          return eval->do_evaluate(op);
       }
@@ -245,7 +172,7 @@ namespace graphene { namespace chain {
 
          auto result = eval->do_apply(op);
 
-         db().adjust_balance(op.fee_payer(), -fee_from_account);
+         db_adjust_balance(op.fee_payer(), -fee_from_account);
 
          return result;
       }

@@ -64,7 +64,7 @@ asset linear_vesting_policy::get_allowed_withdraw( const vesting_policy_context&
         }
     }
 
-    return asset( allowed_withdraw, ctx.amount.asset_id );
+    return asset( allowed_withdraw, ctx.balance.asset_id );
 }
 
 void linear_vesting_policy::on_deposit(const vesting_policy_context& ctx)
@@ -155,6 +155,36 @@ bool cdd_vesting_policy::is_deposit_vested_allowed(const vesting_policy_context&
 bool cdd_vesting_policy::is_withdraw_allowed(const vesting_policy_context& ctx)const
 {
    return (ctx.amount <= get_allowed_withdraw(ctx));
+}
+
+asset instant_vesting_policy::get_allowed_withdraw( const vesting_policy_context& ctx )const
+{
+   return ctx.balance;
+}
+
+void instant_vesting_policy::on_deposit(const vesting_policy_context& ctx)
+{
+}
+
+void instant_vesting_policy::on_deposit_vested(const vesting_policy_context&)
+{
+
+}
+
+bool instant_vesting_policy::is_deposit_allowed(const vesting_policy_context& ctx)const
+{
+   return (ctx.amount.asset_id == ctx.balance.asset_id)
+      && sum_below_max_shares(ctx.amount, ctx.balance);
+}
+
+void instant_vesting_policy::on_withdraw(const vesting_policy_context& ctx)
+{
+}
+
+bool instant_vesting_policy::is_withdraw_allowed(const vesting_policy_context& ctx)const
+{
+   return (ctx.amount.asset_id == ctx.balance.asset_id)
+          && (ctx.amount <= get_allowed_withdraw(ctx));
 }
 
 #define VESTING_VISITOR(NAME, MAYBE_CONST)                    \
