@@ -308,8 +308,11 @@ namespace graphene { namespace app {
        return *_custom_operations_api;
     }
 
-    vector<order_history_object> history_api::get_fill_order_history( std::string asset_a, std::string asset_b, uint32_t limit  )const
+    vector<order_history_object> history_api::get_fill_order_history( std::string asset_a, std::string asset_b,
+                                                                      uint32_t limit )const
     {
+       auto market_hist_plugin = _app.get_plugin<market_history_plugin>( "market_history" );
+       FC_ASSERT( market_hist_plugin, "Market history plugin is not enabled" );
        FC_ASSERT(_app.chain_database());
        const auto& db = *_app.chain_database();
        asset_id_type a = database_api.get_asset_id_from_string( asset_a );
@@ -476,9 +479,9 @@ namespace graphene { namespace app {
 
     flat_set<uint32_t> history_api::get_market_history_buckets()const
     {
-       auto hist = _app.get_plugin<market_history_plugin>( "market_history" );
-       FC_ASSERT( hist );
-       return hist->tracked_buckets();
+       auto market_hist_plugin = _app.get_plugin<market_history_plugin>( "market_history" );
+       FC_ASSERT( market_hist_plugin, "Market history plugin is not enabled" );
+       return market_hist_plugin->tracked_buckets();
     }
 
     history_operation_detail history_api::get_account_history_by_operations( const std::string account_id_or_name,
@@ -514,7 +517,11 @@ namespace graphene { namespace app {
                                                            uint32_t bucket_seconds,
                                                            fc::time_point_sec start, fc::time_point_sec end )const
     { try {
+
+       auto market_hist_plugin = _app.get_plugin<market_history_plugin>( "market_history" );
+       FC_ASSERT( market_hist_plugin, "Market history plugin is not enabled" );
        FC_ASSERT(_app.chain_database());
+
        const auto& db = *_app.chain_database();
        asset_id_type a = database_api.get_asset_id_from_string( asset_a );
        asset_id_type b = database_api.get_asset_id_from_string( asset_b );
@@ -538,6 +545,127 @@ namespace graphene { namespace app {
        }
        return result;
     } FC_CAPTURE_AND_RETHROW( (asset_a)(asset_b)(bucket_seconds)(start)(end) ) }
+
+    vector<liquidity_pool_history_object> history_api::get_liquidity_pool_history(
+               liquidity_pool_id_type pool_id,
+               optional<fc::time_point_sec> start,
+               optional<fc::time_point_sec> stop,
+               optional<uint32_t> olimit,
+               optional<int64_t> operation_type )const
+    { try {
+       FC_ASSERT( _app.get_options().has_market_history_plugin, "Market history plugin is not enabled." );
+
+       uint32_t limit = olimit.valid() ? *olimit : 101;
+
+       const auto configured_limit = _app.get_options().api_limit_get_liquidity_pool_history;
+       FC_ASSERT( limit <= configured_limit,
+                  "limit can not be greater than ${configured_limit}",
+                  ("configured_limit", configured_limit) );
+
+       FC_ASSERT( _app.chain_database(), "Internal error: the chain database is not availalbe" );
+
+       const auto& db = *_app.chain_database();
+
+       vector<liquidity_pool_history_object> result;
+
+       if( limit == 0 || ( start.valid() && stop.valid() && *start <= *stop ) ) // empty result
+          return result;
+
+       const auto& hist_idx = db.get_index_type<liquidity_pool_history_index>();
+
+       if( operation_type.valid() ) // one operation type
+       {
+          const auto& idx = hist_idx.indices().get<by_pool_op_type_time>();
+          auto itr = start.valid() ? idx.lower_bound( boost::make_tuple( pool_id, *operation_type, *start ) )
+                                   : idx.lower_bound( boost::make_tuple( pool_id, *operation_type ) );
+          auto itr_stop = stop.valid() ? idx.upper_bound( boost::make_tuple( pool_id, *operation_type, *stop ) )
+                                       : idx.upper_bound( boost::make_tuple( pool_id, *operation_type ) );
+          while( itr != itr_stop && result.size() < limit )
+          {
+             result.push_back( *itr );
+             ++itr;
+          }
+       }
+       else // all operation types
+       {
+          const auto& idx = hist_idx.indices().get<by_pool_time>();
+          auto itr = start.valid() ? idx.lower_bound( boost::make_tuple( pool_id, *start ) )
+                                   : idx.lower_bound( pool_id );
+          auto itr_stop = stop.valid() ? idx.upper_bound( boost::make_tuple( pool_id, *stop ) )
+                                       : idx.upper_bound( pool_id );
+          while( itr != itr_stop && result.size() < limit )
+          {
+             result.push_back( *itr );
+             ++itr;
+          }
+       }
+
+       return result;
+
+    } FC_CAPTURE_AND_RETHROW( (pool_id)(start)(stop)(olimit)(operation_type) ) }
+
+    vector<liquidity_pool_history_object> history_api::get_liquidity_pool_history_by_sequence(
+               liquidity_pool_id_type pool_id,
+               optional<uint64_t> start,
+               optional<fc::time_point_sec> stop,
+               optional<uint32_t> olimit,
+               optional<int64_t> operation_type )const
+    { try {
+       FC_ASSERT( _app.get_options().has_market_history_plugin, "Market history plugin is not enabled." );
+
+       uint32_t limit = olimit.valid() ? *olimit : 101;
+
+       const auto configured_limit = _app.get_options().api_limit_get_liquidity_pool_history;
+       FC_ASSERT( limit <= configured_limit,
+                  "limit can not be greater than ${configured_limit}",
+                  ("configured_limit", configured_limit) );
+
+       FC_ASSERT( _app.chain_database(), "Internal error: the chain database is not availalbe" );
+
+       const auto& db = *_app.chain_database();
+
+       vector<liquidity_pool_history_object> result;
+
+       if( limit == 0 ) // empty result
+          return result;
+
+       const auto& hist_idx = db.get_index_type<liquidity_pool_history_index>();
+
+       if( operation_type.valid() ) // one operation type
+       {
+          const auto& idx = hist_idx.indices().get<by_pool_op_type_seq>();
+          const auto& idx_t = hist_idx.indices().get<by_pool_op_type_time>();
+          auto itr = start.valid() ? idx.lower_bound( boost::make_tuple( pool_id, *operation_type, *start ) )
+                                   : idx.lower_bound( boost::make_tuple( pool_id, *operation_type ) );
+          auto itr_temp = stop.valid() ? idx_t.upper_bound( boost::make_tuple( pool_id, *operation_type, *stop ) )
+                                       : idx_t.upper_bound( boost::make_tuple( pool_id, *operation_type ) );
+          auto itr_stop = ( itr_temp == idx_t.end() ? idx.end() : idx.iterator_to( *itr_temp ) );
+          while( itr != itr_stop && result.size() < limit )
+          {
+             result.push_back( *itr );
+             ++itr;
+          }
+       }
+       else // all operation types
+       {
+          const auto& idx = hist_idx.indices().get<by_pool_seq>();
+          const auto& idx_t = hist_idx.indices().get<by_pool_time>();
+          auto itr = start.valid() ? idx.lower_bound( boost::make_tuple( pool_id, *start ) )
+                                   : idx.lower_bound( pool_id );
+          auto itr_temp = stop.valid() ? idx_t.upper_bound( boost::make_tuple( pool_id, *stop ) )
+                                       : idx_t.upper_bound( pool_id );
+          auto itr_stop = ( itr_temp == idx_t.end() ? idx.end() : idx.iterator_to( *itr_temp ) );
+          while( itr != itr_stop && result.size() < limit )
+          {
+             result.push_back( *itr );
+             ++itr;
+          }
+       }
+
+       return result;
+
+    } FC_CAPTURE_AND_RETHROW( (pool_id)(start)(stop)(olimit)(operation_type) ) }
+
 
     crypto_api::crypto_api(){};
 

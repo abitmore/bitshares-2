@@ -150,7 +150,6 @@ std::shared_ptr<graphene::app::application> start_application(fc::temp_directory
    app1->startup_plugins();
 
    app1->startup();
-   fc::usleep(fc::milliseconds(500));
 
    return app1;
 }
@@ -240,6 +239,15 @@ bool generate_maintenance_block(std::shared_ptr<graphene::app::application> app)
 }
 
 ///////////
+/// Check if hardfork core-2262 has passed
+///////////
+bool is_hf2262_passed(std::shared_ptr<graphene::app::application> app) {
+   auto db = app->chain_database();
+   auto maint_time = db->get_dynamic_global_properties().next_maintenance_time;
+   return HARDFORK_CORE_2262_PASSED( maint_time );
+}
+
+///////////
 /// @brief a class to make connecting to the application server easier
 ///////////
 class client_connection
@@ -299,16 +307,6 @@ public:
 
 struct cli_fixture
 {
-   class dummy
-   {
-   public:
-      ~dummy()
-      {
-         // wait for everything to finish up
-         fc::usleep(fc::milliseconds(500));
-      }
-   };
-   dummy dmy;
    int server_port_number;
    fc::temp_directory app_dir;
    std::shared_ptr<graphene::app::application> app1;
@@ -462,7 +460,8 @@ BOOST_FIXTURE_TEST_CASE( cli_vote_for_2_witnesses, cli_fixture )
       init1_obj = con.wallet_api_ptr->get_witness("init1");
       witness_object init2_obj = con.wallet_api_ptr->get_witness("init2");
       int init1_middle_votes = init1_obj.total_votes;
-      BOOST_CHECK(init1_middle_votes > init1_start_votes);
+      if( !is_hf2262_passed(app1) )
+         BOOST_CHECK(init1_middle_votes > init1_start_votes);
 
       // Vote for a 2nd witness
       int init2_start_votes = init2_obj.total_votes;
@@ -476,9 +475,11 @@ BOOST_FIXTURE_TEST_CASE( cli_vote_for_2_witnesses, cli_fixture )
       init1_obj = con.wallet_api_ptr->get_witness("init1");
 
       int init2_middle_votes = init2_obj.total_votes;
-      BOOST_CHECK(init2_middle_votes > init2_start_votes);
+      if( !is_hf2262_passed(app1) )
+         BOOST_CHECK(init2_middle_votes > init2_start_votes);
       int init1_last_votes = init1_obj.total_votes;
-      BOOST_CHECK(init1_last_votes > init1_start_votes);
+      if( !is_hf2262_passed(app1) )
+         BOOST_CHECK(init1_last_votes > init1_start_votes);
    } catch( fc::exception& e ) {
       edump((e.to_detail_string()));
       throw;
@@ -1001,17 +1002,12 @@ BOOST_AUTO_TEST_CASE( cli_multisig_transaction )
          }
       }
 
-      // wait for everything to finish up
-      fc::usleep(fc::seconds(1));
    } catch( fc::exception& e ) {
       edump((e.to_detail_string()));
       throw;
    }
    app1->shutdown();
    app1.reset();
-   // Intentional delay after app1->shutdown
-   std::cout << "cli_multisig_transaction conclusion: Intentional delay" << std::endl;
-   fc::usleep(fc::seconds(1));
 }
 
 graphene::wallet::plain_keys decrypt_keys( const std::string& password, const vector<char>& cipher_keys )
@@ -1041,6 +1037,7 @@ BOOST_AUTO_TEST_CASE( saving_keys_wallet_test ) {
    BOOST_CHECK( pk.keys.size() == 1 ); // nathan key
 
    BOOST_CHECK( generate_block( cli.app1 ) );
+   // Intentional delay
    fc::usleep( fc::seconds(1) );
 
    wallet = fc::json::from_file( path ).as<graphene::wallet::wallet_data>( 2 * GRAPHENE_MAX_NESTED_OBJECTS );
@@ -1225,17 +1222,12 @@ BOOST_AUTO_TEST_CASE( cli_create_htlc )
          BOOST_CHECK(generate_block(app1));
       }
 
-      // wait for everything to finish up
-      fc::usleep(fc::seconds(1));
    } catch( fc::exception& e ) {
       edump((e.to_detail_string()));
       throw;
    }
    app1->shutdown();
    app1.reset();
-   // Intentional delay after app1->shutdown
-   std::cout << "cli_create_htlc conclusion: Intentional delay" << std::endl;
-   fc::usleep(fc::seconds(1));
 }
 
 static string encapsulate( const graphene::wallet::signed_message& msg )
@@ -1807,15 +1799,10 @@ BOOST_AUTO_TEST_CASE( cli_create_htlc_bsip64 )
       } 
       con.wallet_api_ptr->unlock("supersecret");        
 
-      // wait for everything to finish up
-      fc::usleep(fc::seconds(1));
    } catch( fc::exception& e ) {
       edump((e.to_detail_string()));
       throw;
    }
    app1->shutdown();
    app1.reset();
-   // Intentional delay after app1->shutdown
-   std::cout << "cli_create_htlc conclusion: Intentional delay" << std::endl;
-   fc::usleep(fc::seconds(1));
 }
