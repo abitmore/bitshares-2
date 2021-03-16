@@ -23,13 +23,14 @@
  */
 #pragma once
 #include <graphene/protocol/base.hpp>
+#include <graphene/protocol/asset.hpp>
 
 namespace graphene { namespace protocol { 
    /**
-     * @defgroup proposed_transactions  The Graphene Transaction Proposal Protocol
+     * @defgroup proposed_transactions  The BitShares Transaction Proposal Protocol
      * @ingroup operations
      *
-     * Graphene allows users to propose a transaction which requires approval of multiple accounts in order to execute.
+     * BitShares allows users to propose a transaction which requires approval of multiple accounts in order to execute.
      * The user proposes a transaction using proposal_create_operation, then signatory accounts use
      * proposal_update_operations to add or remove their approvals from this operation. When a sufficient number of
      * approvals have been granted, the operations in the proposal are used to create a virtual transaction which is
@@ -179,3 +180,10 @@ FC_REFLECT( graphene::protocol::proposal_update_operation, (fee)(fee_paying_acco
             (active_approvals_to_add)(active_approvals_to_remove)(owner_approvals_to_add)(owner_approvals_to_remove)
             (key_approvals_to_add)(key_approvals_to_remove)(extensions) )
 FC_REFLECT( graphene::protocol::proposal_delete_operation, (fee)(fee_paying_account)(using_owner_authority)(proposal)(extensions) )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::proposal_create_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::proposal_update_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::proposal_delete_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::proposal_create_operation )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::proposal_update_operation )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::proposal_delete_operation )

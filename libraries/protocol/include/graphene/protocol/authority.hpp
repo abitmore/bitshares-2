@@ -23,6 +23,7 @@
  */
 #pragma once
 #include <graphene/protocol/types.hpp>
+#include <graphene/protocol/address.hpp>
 
 namespace graphene { namespace protocol {
 
@@ -106,8 +107,9 @@ namespace graphene { namespace protocol {
                 (a.key_auths == b.key_auths) &&
                 (a.address_auths == b.address_auths); 
       }
+      friend bool operator!= ( const authority& a, const authority& b ) { return !(a==b); }
       uint32_t num_auths()const { return account_auths.size() + key_auths.size() + address_auths.size(); }
-      void     clear() { account_auths.clear(); key_auths.clear(); }
+      void     clear() { account_auths.clear(); key_auths.clear(); address_auths.clear(); weight_threshold = 0; }
 
       static authority null_authority()
       {
@@ -133,3 +135,5 @@ void add_authority_accounts(
 
 FC_REFLECT( graphene::protocol::authority, (weight_threshold)(account_auths)(key_auths)(address_auths) )
 FC_REFLECT_ENUM( graphene::protocol::authority::classification, (owner)(active)(key) )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::authority )

@@ -22,11 +22,12 @@
  * THE SOFTWARE.
  */
 #pragma once
+
 #include <graphene/protocol/base.hpp>
+#include <graphene/protocol/asset.hpp>
+#include <graphene/protocol/authority.hpp>
 #include <graphene/protocol/buyback.hpp>
-#include <graphene/protocol/ext.hpp>
 #include <graphene/protocol/special_authority.hpp>
-#include <graphene/protocol/types.hpp>
 #include <graphene/protocol/vote.hpp>
 
 namespace graphene { namespace protocol {
@@ -61,6 +62,14 @@ namespace graphene { namespace protocol {
       inline bool is_voting() const
       {
          return ( voting_account != GRAPHENE_PROXY_TO_SELF_ACCOUNT || !votes.empty() );
+      }
+
+      uint16_t num_committee_voted() const
+      {
+         if( voting_account != GRAPHENE_PROXY_TO_SELF_ACCOUNT )
+            return 0;
+         return std::count_if( votes.begin(), votes.end(),
+                               [](vote_id_type v){ return v.type() == vote_id_type::vote_type::committee; } );
       }
 
       void validate()const;
@@ -120,8 +129,9 @@ namespace graphene { namespace protocol {
     * @ingroup operations
     * @brief Update an existing account
     *
-    * This operation is used to update an existing account. It can be used to update the authorities, or adjust the options on the account.
-    * See @ref account_object::options_type for the options which may be updated.
+    * This operation is used to update an existing account. It can be used to update the authorities,
+    * or adjust the options on the account.
+    * See @ref graphene::chain::account_object::options for the options which may be updated.
     */
    struct account_update_operation : public base_operation
    {
@@ -299,3 +309,15 @@ FC_REFLECT( graphene::protocol::account_upgrade_operation::fee_parameters_type, 
 FC_REFLECT( graphene::protocol::account_transfer_operation::fee_parameters_type, (fee) )
 
 FC_REFLECT( graphene::protocol::account_transfer_operation, (fee)(account_id)(new_owner)(extensions) )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_options )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_create_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_whitelist_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_update_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_upgrade_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_transfer_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_create_operation )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_whitelist_operation )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_update_operation )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_upgrade_operation )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::account_transfer_operation )

@@ -22,12 +22,9 @@
  * THE SOFTWARE.
  */
 #pragma once
-#include <fc/io/raw.hpp>
 
 #include <graphene/protocol/transaction.hpp>
-#include <graphene/db/index.hpp>
 #include <graphene/db/generic_index.hpp>
-#include <fc/uint128.hpp>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/member.hpp>
@@ -47,8 +44,8 @@ namespace graphene { namespace chain {
    class transaction_history_object : public abstract_object<transaction_history_object>
    {
       public:
-         static const uint8_t space_id = implementation_ids;
-         static const uint8_t type_id  = impl_transaction_history_object_type;
+         static constexpr uint8_t space_id = implementation_ids;
+         static constexpr uint8_t type_id  = impl_transaction_history_object_type;
 
          signed_transaction  trx;
          transaction_id_type trx_id;
@@ -74,4 +71,6 @@ namespace graphene { namespace chain {
 
 MAP_OBJECT_ID_TO_TYPE(graphene::chain::transaction_history_object)
 
-FC_REFLECT_DERIVED( graphene::chain::transaction_history_object, (graphene::db::object), (trx)(trx_id) )
+FC_REFLECT_TYPENAME( graphene::chain::transaction_history_object )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::transaction_history_object )

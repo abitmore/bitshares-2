@@ -23,8 +23,13 @@
  */
 #pragma once
 
-#include <fc/array.hpp>
+#include <array>
+#include <cstring>
 #include <string>
+
+#include <fc/io/datastream.hpp>
+#include <fc/io/raw_fwd.hpp>
+#include <fc/variant.hpp>
 
 namespace fc { namespace ecc { class public_key; } }
 
@@ -44,7 +49,7 @@ namespace graphene { namespace protocol {
 
        operator std::string()const; ///< converts to base58 + checksum
 
-       fc::array<char,25> addr; ///< binary representation of address
+       std::array<char,25> addr{}; ///< binary representation of address, 0-initialized
    };
 
    inline bool operator == ( const pts_address& a, const pts_address& b ) { return a.addr == b.addr; }
@@ -62,7 +67,7 @@ namespace std
          size_t operator()(const graphene::protocol::pts_address &a) const 
          {
             size_t s;
-            memcpy( (char*)&s, &a.addr.data[sizeof(a)-sizeof(s)], sizeof(s) );
+            std::memcpy( (char*)&s, a.addr.data() + a.addr.size() - sizeof(s), sizeof(s) );
             return s;
          }
    };
@@ -75,4 +80,12 @@ namespace fc
 { 
    void to_variant( const graphene::protocol::pts_address& var,  fc::variant& vo, uint32_t max_depth = 1 );
    void from_variant( const fc::variant& var,  graphene::protocol::pts_address& vo, uint32_t max_depth = 1 );
-}
+
+namespace raw {
+   extern template void pack( datastream<size_t>& s, const graphene::protocol::pts_address& tx,
+                              uint32_t _max_depth );
+   extern template void pack( datastream<char*>& s, const graphene::protocol::pts_address& tx,
+                              uint32_t _max_depth );
+   extern template void unpack( datastream<const char*>& s, graphene::protocol::pts_address& tx,
+                                uint32_t _max_depth );
+} } // fc::raw

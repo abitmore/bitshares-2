@@ -25,8 +25,8 @@
 #include <graphene/elasticsearch/elasticsearch_plugin.hpp>
 #include <graphene/chain/impacted.hpp>
 #include <graphene/chain/account_evaluator.hpp>
+#include <graphene/chain/hardfork.hpp>
 #include <curl/curl.h>
-#include <graphene/utilities/elasticsearch.hpp>
 
 namespace graphene { namespace elasticsearch {
 
@@ -38,7 +38,10 @@ class elasticsearch_plugin_impl
    public:
       elasticsearch_plugin_impl(elasticsearch_plugin& _plugin)
          : _self( _plugin )
-      {  curl = curl_easy_init(); }
+      {
+         curl = curl_easy_init();
+         curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+      }
       virtual ~elasticsearch_plugin_impl();
 
       bool update_account_histories( const signed_block& b );
@@ -57,8 +60,10 @@ class elasticsearch_plugin_impl
       bool _elasticsearch_visitor = false;
       std::string _elasticsearch_basic_auth = "";
       std::string _elasticsearch_index_prefix = "bitshares-";
-      bool _elasticsearch_operation_object = false;
+      bool _elasticsearch_operation_object = true;
       uint32_t _elasticsearch_start_es_after_block = 0;
+      bool _elasticsearch_operation_string = false;
+      mode _elasticsearch_mode = mode::only_save;
       CURL *curl; // curl handler
       vector <string> bulk_lines; //  vector of op lines
       vector<std::string> prepare;
@@ -154,12 +159,15 @@ bool elasticsearch_plugin_impl::update_account_histories( const signed_block& b 
       // get the set of accounts this operation applies to
       flat_set<account_id_type> impacted;
       vector<authority> other;
-      operation_get_required_authorities( op.op, impacted, impacted, other ); // fee_payer is added here
+      // fee_payer is added here
+      operation_get_required_authorities( op.op, impacted, impacted, other,
+                                          MUST_IGNORE_CUSTOM_OP_REQD_AUTHS( db.head_block_time() ) );
 
-      if( op.op.which() == operation::tag< account_create_operation >::value )
+      if( op.op.is_type< account_create_operation >() )
          impacted.insert( op.result.get<object_id_type>() );
       else
-         graphene::chain::operation_get_impacted_accounts( op.op, impacted );
+         operation_get_impacted_accounts( op.op, impacted,
+                                          MUST_IGNORE_CUSTOM_OP_REQD_AUTHS( db.head_block_time() ) );
 
       for( auto& a : other )
          for( auto& item : a.account_auths )
@@ -168,7 +176,11 @@ bool elasticsearch_plugin_impl::update_account_histories( const signed_block& b 
       for( auto& account_id : impacted )
       {
          if(!add_elasticsearch( account_id, oho, b.block_num() ))
+         {
+            elog( "Error adding data to Elastic Search: block num ${b}, account ${a}, data ${d}",
+                  ("b",b.block_num()) ("a",account_id) ("d", oho) );
             return false;
+         }
       }
    }
    // we send bulk at end of block when we are in sync for better real time client experience
@@ -179,7 +191,16 @@ bool elasticsearch_plugin_impl::update_account_histories( const signed_block& b 
       {
          prepare.clear();
          if(!graphene::utilities::SendBulk(std::move(es)))
+         {
+            // Note: although called with `std::move()`, `es` is not updated in `SendBulk()`
+            elog( "Error sending ${n} lines of bulk data to Elastic Search, the first lines are:",
+                  ("n",es.bulk_lines.size()) );
+            for( size_t i = 0; i < es.bulk_lines.size() && i < 10; ++i )
+            {
+               edump( (es.bulk_lines[i]) );
+            }
             return false;
+         }
          else
             bulk_lines.clear();
       }
@@ -223,9 +244,8 @@ void elasticsearch_plugin_impl::doOperationHistory(const optional <operation_his
       adaptor_struct adaptor;
       os.op_object = adaptor.adapt(os.op_object.get_object());
    }
-   else
+   if(_elasticsearch_operation_string)
       os.op = fc::json::to_string(oho->op);
-
 }
 
 void elasticsearch_plugin_impl::doBlock(uint32_t trx_in_block, const signed_block& b)
@@ -296,7 +316,16 @@ bool elasticsearch_plugin_impl::add_elasticsearch( const account_id_type account
       prepare.clear();
       populateESstruct();
       if(!graphene::utilities::SendBulk(std::move(es)))
+      {
+         // Note: although called with `std::move()`, `es` is not updated in `SendBulk()`
+         elog( "Error sending ${n} lines of bulk data to Elastic Search, the first lines are:",
+               ("n",es.bulk_lines.size()) );
+         for( size_t i = 0; i < es.bulk_lines.size() && i < 10; ++i )
+         {
+            edump( (es.bulk_lines[i]) );
+         }
          return false;
+      }
       else
          bulk_lines.clear();
    }
@@ -428,52 +457,80 @@ void elasticsearch_plugin::plugin_set_program_options(
    )
 {
    cli.add_options()
-         ("elasticsearch-node-url", boost::program_options::value<std::string>(), "Elastic Search database node url(http://localhost:9200/)")
-         ("elasticsearch-bulk-replay", boost::program_options::value<uint32_t>(), "Number of bulk documents to index on replay(10000)")
-         ("elasticsearch-bulk-sync", boost::program_options::value<uint32_t>(), "Number of bulk documents to index on a syncronied chain(100)")
-         ("elasticsearch-visitor", boost::program_options::value<bool>(), "Use visitor to index additional data(slows down the replay(false))")
-         ("elasticsearch-basic-auth", boost::program_options::value<std::string>(), "Pass basic auth to elasticsearch database('')")
-         ("elasticsearch-index-prefix", boost::program_options::value<std::string>(), "Add a prefix to the index(bitshares-)")
-         ("elasticsearch-operation-object", boost::program_options::value<bool>(), "Save operation as object(false)")
-         ("elasticsearch-start-es-after-block", boost::program_options::value<uint32_t>(), "Start doing ES job after block(0)")
+         ("elasticsearch-node-url", boost::program_options::value<std::string>(),
+               "Elastic Search database node url(http://localhost:9200/)")
+         ("elasticsearch-bulk-replay", boost::program_options::value<uint32_t>(),
+               "Number of bulk documents to index on replay(10000)")
+         ("elasticsearch-bulk-sync", boost::program_options::value<uint32_t>(),
+               "Number of bulk documents to index on a syncronied chain(100)")
+         ("elasticsearch-visitor", boost::program_options::value<bool>(),
+               "Use visitor to index additional data(slows down the replay(false))")
+         ("elasticsearch-basic-auth", boost::program_options::value<std::string>(),
+               "Pass basic auth to elasticsearch database('')")
+         ("elasticsearch-index-prefix", boost::program_options::value<std::string>(),
+               "Add a prefix to the index(bitshares-)")
+         ("elasticsearch-operation-object", boost::program_options::value<bool>(),
+               "Save operation as object(true)")
+         ("elasticsearch-start-es-after-block", boost::program_options::value<uint32_t>(),
+               "Start doing ES job after block(0)")
+         ("elasticsearch-operation-string", boost::program_options::value<bool>(),
+               "Save operation as string. Needed to serve history api calls(false)")
+         ("elasticsearch-mode", boost::program_options::value<uint16_t>(),
+               "Mode of operation: only_save(0), only_query(1), all(2) - Default: 0")
          ;
    cfg.add(cli);
 }
 
 void elasticsearch_plugin::plugin_initialize(const boost::program_options::variables_map& options)
 {
-   database().applied_block.connect( [&]( const signed_block& b) {
-      if (!my->update_account_histories(b))
-         FC_THROW_EXCEPTION(graphene::chain::plugin_exception, "Error populating ES database, we are going to keep trying.");
-   } );
-
    my->_oho_index = database().add_index< primary_index< operation_history_index > >();
    database().add_index< primary_index< account_transaction_history_index > >();
 
-   if (options.count("elasticsearch-node-url")) {
+   if (options.count("elasticsearch-node-url") > 0) {
       my->_elasticsearch_node_url = options["elasticsearch-node-url"].as<std::string>();
    }
-   if (options.count("elasticsearch-bulk-replay")) {
+   if (options.count("elasticsearch-bulk-replay") > 0) {
       my->_elasticsearch_bulk_replay = options["elasticsearch-bulk-replay"].as<uint32_t>();
    }
-   if (options.count("elasticsearch-bulk-sync")) {
+   if (options.count("elasticsearch-bulk-sync") > 0) {
       my->_elasticsearch_bulk_sync = options["elasticsearch-bulk-sync"].as<uint32_t>();
    }
-   if (options.count("elasticsearch-visitor")) {
+   if (options.count("elasticsearch-visitor") > 0) {
       my->_elasticsearch_visitor = options["elasticsearch-visitor"].as<bool>();
    }
-   if (options.count("elasticsearch-basic-auth")) {
+   if (options.count("elasticsearch-basic-auth") > 0) {
       my->_elasticsearch_basic_auth = options["elasticsearch-basic-auth"].as<std::string>();
    }
-   if (options.count("elasticsearch-index-prefix")) {
+   if (options.count("elasticsearch-index-prefix") > 0) {
       my->_elasticsearch_index_prefix = options["elasticsearch-index-prefix"].as<std::string>();
    }
-   if (options.count("elasticsearch-operation-object")) {
+   if (options.count("elasticsearch-operation-object") > 0) {
       my->_elasticsearch_operation_object = options["elasticsearch-operation-object"].as<bool>();
    }
-   if (options.count("elasticsearch-start-es-after-block")) {
+   if (options.count("elasticsearch-start-es-after-block") > 0) {
       my->_elasticsearch_start_es_after_block = options["elasticsearch-start-es-after-block"].as<uint32_t>();
-   }   
+   }
+   if (options.count("elasticsearch-operation-string") > 0) {
+      my->_elasticsearch_operation_string = options["elasticsearch-operation-string"].as<bool>();
+   }
+   if (options.count("elasticsearch-mode") > 0) {
+      const auto option_number = options["elasticsearch-mode"].as<uint16_t>();
+      if(option_number > mode::all)
+         FC_THROW_EXCEPTION(graphene::chain::plugin_exception, "Elasticsearch mode not valid");
+      my->_elasticsearch_mode = static_cast<mode>(options["elasticsearch-mode"].as<uint16_t>());
+   }
+
+   if(my->_elasticsearch_mode != mode::only_query) {
+      if (my->_elasticsearch_mode == mode::all && !my->_elasticsearch_operation_string)
+         FC_THROW_EXCEPTION(graphene::chain::plugin_exception,
+               "If elasticsearch-mode is set to all then elasticsearch-operation-string need to be true");
+
+      database().applied_block.connect([this](const signed_block &b) {
+         if (!my->update_account_histories(b))
+            FC_THROW_EXCEPTION(graphene::chain::plugin_exception,
+                  "Error populating ES database, we are going to keep trying.");
+      });
+   }
 }
 
 void elasticsearch_plugin::plugin_startup()
@@ -487,5 +544,131 @@ void elasticsearch_plugin::plugin_startup()
       FC_THROW_EXCEPTION(fc::exception, "ES database is not up in url ${url}", ("url", my->_elasticsearch_node_url));
    ilog("elasticsearch ACCOUNT HISTORY: plugin_startup() begin");
 }
+
+operation_history_object elasticsearch_plugin::get_operation_by_id(operation_history_id_type id)
+{
+   const string operation_id_string = std::string(object_id_type(id));
+
+   const string query = R"(
+   {
+      "query": {
+         "match":
+         {
+            "account_history.operation_id": )" + operation_id_string + R"("
+         }
+      }
+   }
+   )";
+
+   auto es = prepareHistoryQuery(query);
+   const auto response = graphene::utilities::simpleQuery(es);
+   variant variant_response = fc::json::from_string(response);
+   const auto source = variant_response["hits"]["hits"][size_t(0)]["_source"];
+   return fromEStoOperation(source);
+}
+
+vector<operation_history_object> elasticsearch_plugin::get_account_history(
+      const account_id_type account_id,
+      operation_history_id_type stop = operation_history_id_type(),
+      unsigned limit = 100,
+      operation_history_id_type start = operation_history_id_type())
+{
+   const string account_id_string = std::string(object_id_type(account_id));
+
+   const auto stop_number = stop.instance.value;
+   const auto start_number = start.instance.value;
+
+   string range = "";
+   if(stop_number == 0)
+      range = " AND operation_id_num: ["+fc::to_string(stop_number)+" TO "+fc::to_string(start_number)+"]";
+   else if(stop_number > 0)
+      range = " AND operation_id_num: {"+fc::to_string(stop_number)+" TO "+fc::to_string(start_number)+"]";
+
+   const string query = R"(
+   {
+      "size": )" + fc::to_string(limit) + R"(,
+      "sort" : [{ "operation_id_num" : {"order" : "desc"}}],
+      "query": {
+         "bool": {
+            "must": [
+            {
+               "query_string": {
+                  "query": "account_history.account: )" + account_id_string +  range + R"("
+               }
+            }
+            ]
+         }
+      }
+   }
+   )";
+
+   auto es = prepareHistoryQuery(query);
+
+   vector<operation_history_object> result;
+
+   if(!graphene::utilities::checkES(es))
+      return result;
+
+   const auto response = graphene::utilities::simpleQuery(es);
+   variant variant_response = fc::json::from_string(response);
+   
+   const auto hits = variant_response["hits"]["total"];
+   uint32_t size;
+   if( hits.is_object() ) // ES-7 ?
+      size = static_cast<uint32_t>(hits["value"].as_uint64());
+   else // probably ES-6
+      size = static_cast<uint32_t>(hits.as_uint64());
+   size = std::min( size, limit );
+
+   for(unsigned i=0; i<size; i++)
+   {
+      const auto source = variant_response["hits"]["hits"][size_t(i)]["_source"];
+      result.push_back(fromEStoOperation(source));
+   }
+   return result;
+}
+
+operation_history_object elasticsearch_plugin::fromEStoOperation(variant source)
+{
+   operation_history_object result;
+
+   const auto operation_id = source["account_history"]["operation_id"];
+   fc::from_variant( operation_id, result.id, GRAPHENE_MAX_NESTED_OBJECTS );
+
+   const auto op = fc::json::from_string(source["operation_history"]["op"].as_string());
+   fc::from_variant( op, result.op, GRAPHENE_MAX_NESTED_OBJECTS );
+
+   const auto operation_result = fc::json::from_string(source["operation_history"]["operation_result"].as_string());
+   fc::from_variant( operation_result, result.result, GRAPHENE_MAX_NESTED_OBJECTS );
+
+   result.block_num = source["block_data"]["block_num"].as_uint64();
+   result.trx_in_block = source["operation_history"]["trx_in_block"].as_uint64();
+   result.op_in_trx = source["operation_history"]["op_in_trx"].as_uint64();
+   result.trx_in_block = source["operation_history"]["virtual_op"].as_uint64();
+
+   return result;
+}
+
+graphene::utilities::ES elasticsearch_plugin::prepareHistoryQuery(string query)
+{
+   CURL *curl;
+   curl = curl_easy_init();
+   curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+
+   graphene::utilities::ES es;
+   es.curl = curl;
+   es.elasticsearch_url = my->_elasticsearch_node_url;
+   es.index_prefix = my->_elasticsearch_index_prefix;
+   es.endpoint = es.index_prefix + "*/data/_search";
+   es.query = query;
+
+   return es;
+}
+
+mode elasticsearch_plugin::get_running_mode()
+{
+   return my->_elasticsearch_mode;
+}
+
 
 } }

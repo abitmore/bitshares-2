@@ -26,7 +26,6 @@
 #include <graphene/protocol/authority.hpp>
 #include <graphene/protocol/types.hpp>
 
-#include <graphene/db/object.hpp>
 #include <graphene/db/generic_index.hpp>
 
 #include <fc/crypto/elliptic.hpp>
@@ -42,16 +41,14 @@ namespace graphene { namespace chain {
 class blinded_balance_object : public graphene::db::abstract_object<blinded_balance_object>
 {
    public:
-      static const uint8_t space_id = implementation_ids;
-      static const uint8_t type_id  = impl_blinded_balance_object_type;
+      static constexpr uint8_t space_id = implementation_ids;
+      static constexpr uint8_t type_id  = impl_blinded_balance_object_type;
 
       fc::ecc::commitment_type                commitment;
       asset_id_type                           asset_id;
       authority                               owner;
 };
 
-struct by_asset;
-struct by_owner;
 struct by_commitment;
 
 /**
@@ -70,4 +67,6 @@ typedef generic_index<blinded_balance_object, blinded_balance_object_multi_index
 
 MAP_OBJECT_ID_TO_TYPE(graphene::chain::blinded_balance_object)
 
-FC_REFLECT_DERIVED( graphene::chain::blinded_balance_object, (graphene::db::object), (commitment)(asset_id)(owner) )
+FC_REFLECT_TYPENAME( graphene::chain::blinded_balance_object )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::blinded_balance_object )

@@ -24,6 +24,8 @@
 
 #include <graphene/protocol/authority.hpp>
 
+#include <fc/io/raw.hpp>
+
 namespace graphene { namespace protocol {
 
 void add_authority_accounts(
@@ -36,3 +38,5 @@ void add_authority_accounts(
 }
 
 } } // graphene::protocol
+
+GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::protocol::authority )

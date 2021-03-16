@@ -89,3 +89,6 @@ namespace graphene { namespace protocol {
 
 FC_REFLECT( graphene::protocol::memo_message, (checksum)(text) )
 FC_REFLECT( graphene::protocol::memo_data, (from)(to)(nonce)(message) )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::memo_message )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::memo_data )

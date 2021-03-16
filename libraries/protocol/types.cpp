@@ -21,7 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-#include <graphene/protocol/config.hpp>
+
 #include <graphene/protocol/types.hpp>
 #include <graphene/protocol/fee_schedule.hpp>
 
@@ -51,7 +51,7 @@ namespace graphene { namespace protocol {
        auto bin = fc::from_base58( base58str.substr( prefix_len ) );
        auto bin_key = fc::raw::unpack<binary_key>(bin);
        key_data = bin_key.data;
-       FC_ASSERT( fc::ripemd160::hash( key_data.data, key_data.size() )._hash[0].value() == bin_key.check );
+       FC_ASSERT( fc::ripemd160::hash( (char*) key_data.data(), key_data.size() )._hash[0].value() == bin_key.check );
     };
 
     public_key_type::operator fc::ecc::public_key_data() const
@@ -68,7 +68,7 @@ namespace graphene { namespace protocol {
     {
        binary_key k;
        k.data = key_data;
-       k.check = fc::ripemd160::hash( k.data.data, k.data.size() )._hash[0].value();
+       k.check = fc::ripemd160::hash( (char*) k.data.data(), k.data.size() )._hash[0].value();
        auto data = fc::raw::pack( k );
        return GRAPHENE_ADDRESS_PREFIX + fc::to_base58( data.data(), data.size() );
     }
@@ -112,4 +112,11 @@ namespace fc
         from_variant(var, const_cast<graphene::protocol::fee_schedule&>(*vo), max_depth);
     }
 
-} // fc
+namespace raw {
+   template void pack( datastream<size_t>& s, const graphene::protocol::public_key_type& tx,
+                       uint32_t _max_depth=FC_PACK_MAX_DEPTH );
+   template void pack( datastream<char*>& s, const graphene::protocol::public_key_type& tx,
+                       uint32_t _max_depth=FC_PACK_MAX_DEPTH );
+   template void unpack( datastream<const char*>& s, graphene::protocol::public_key_type& tx,
+                         uint32_t _max_depth=FC_PACK_MAX_DEPTH );
+} } // fc::raw

@@ -23,13 +23,10 @@
  */
 #pragma once
 
-#include <boost/multi_index/composite_key.hpp>
-#include <fc/time.hpp>
-#include <graphene/protocol/types.hpp>
 #include <graphene/protocol/htlc.hpp>
-#include <graphene/protocol/asset.hpp>
-#include <graphene/db/object.hpp>
 #include <graphene/db/generic_index.hpp>
+
+#include <boost/multi_index/composite_key.hpp>
 
 namespace graphene { namespace chain {
    using namespace protocol;
@@ -43,8 +40,8 @@ namespace graphene { namespace chain {
    class htlc_object : public graphene::db::abstract_object<htlc_object> {
       public:
          // uniquely identify this object in the database
-         static const uint8_t space_id = protocol_ids;
-         static const uint8_t type_id  = htlc_object_type;
+         static constexpr uint8_t space_id = protocol_ids;
+         static constexpr uint8_t type_id  = htlc_object_type;
 
          struct transfer_info {
             account_id_type from;
@@ -61,6 +58,8 @@ namespace graphene { namespace chain {
                fc::time_point_sec expiration;
             } time_lock;
          } conditions;
+
+         fc::optional<memo_data> memo;
 
       /****
        * Index helper for timelock
@@ -119,13 +118,9 @@ namespace graphene { namespace chain {
 
 MAP_OBJECT_ID_TO_TYPE(graphene::chain::htlc_object)
 
-FC_REFLECT( graphene::chain::htlc_object::transfer_info, 
-   (from) (to) (amount) (asset_id) )
-FC_REFLECT( graphene::chain::htlc_object::condition_info::hash_lock_info,
-   (preimage_hash) (preimage_size) )
-FC_REFLECT( graphene::chain::htlc_object::condition_info::time_lock_info,
-   (expiration) )
-FC_REFLECT( graphene::chain::htlc_object::condition_info, 
-   (hash_lock)(time_lock) )
-FC_REFLECT_DERIVED( graphene::chain::htlc_object, (graphene::db::object),
-               (transfer) (conditions) )
+FC_REFLECT_TYPENAME( graphene::chain::htlc_object::condition_info::hash_lock_info )
+FC_REFLECT_TYPENAME( graphene::chain::htlc_object::condition_info::time_lock_info )
+FC_REFLECT_TYPENAME( graphene::chain::htlc_object::condition_info )
+FC_REFLECT_TYPENAME( graphene::chain::htlc_object )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::htlc_object )

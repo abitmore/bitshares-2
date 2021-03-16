@@ -23,12 +23,14 @@
  */
 #pragma once
 #include <boost/endian/buffers.hpp>
-#include <fc/array.hpp>
+
+#include <graphene/protocol/types.hpp>
+
 #include <fc/io/varint.hpp>
 #include <fc/network/ip.hpp>
-#include <fc/io/raw.hpp>
+#include <fc/io/raw_fwd.hpp>
 #include <fc/crypto/ripemd160.hpp>
-#include <fc/reflect/variant.hpp>
+#include <fc/reflect/typename.hpp>
 
 namespace graphene { namespace net {
 
@@ -42,6 +44,11 @@ namespace graphene { namespace net {
   {
      boost::endian::little_uint32_buf_t size;   // number of bytes in message, capped at MAX_MESSAGE_SIZE
      boost::endian::little_uint32_buf_t msg_type;  // every channel gets a 16 bit message type specifier
+     message_header()
+     {
+        size = 0;
+        msg_type = 0;
+     }
   };
 
   typedef fc::uint160_t message_hash_type;
@@ -109,10 +116,10 @@ namespace graphene { namespace net {
      }
   };
 
-
-
-
 } } // graphene::net
 
-FC_REFLECT( graphene::net::message_header, (size)(msg_type) )
-FC_REFLECT_DERIVED( graphene::net::message, (graphene::net::message_header), (data) )
+FC_REFLECT_TYPENAME( graphene::net::message_header )
+FC_REFLECT_TYPENAME( graphene::net::message )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::net::message_header)
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::net::message)

@@ -23,7 +23,6 @@
  */
 #pragma once
 #include <graphene/protocol/types.hpp>
-#include <graphene/db/object.hpp>
 #include <graphene/db/generic_index.hpp>
 
 namespace graphene { namespace chain {
@@ -43,8 +42,8 @@ namespace graphene { namespace chain {
 class special_authority_object : public graphene::db::abstract_object<special_authority_object>
 {
    public:
-      static const uint8_t space_id = implementation_ids;
-      static const uint8_t type_id = impl_special_authority_object_type;
+      static constexpr uint8_t space_id = implementation_ids;
+      static constexpr uint8_t type_id = impl_special_authority_object_type;
 
       account_id_type account;
 };
@@ -65,8 +64,6 @@ typedef generic_index< special_authority_object, special_authority_multi_index_t
 
 MAP_OBJECT_ID_TO_TYPE(graphene::chain::special_authority_object)
 
-FC_REFLECT_DERIVED(
-   graphene::chain::special_authority_object,
-   (graphene::db::object),
-   (account)
-)
+FC_REFLECT_TYPENAME( graphene::chain::special_authority_object )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::special_authority_object )

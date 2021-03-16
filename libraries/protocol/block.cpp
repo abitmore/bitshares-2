@@ -23,6 +23,7 @@
  */
 #include <boost/endian/conversion.hpp>
 #include <graphene/protocol/block.hpp>
+#include <graphene/protocol/fee_schedule.hpp>
 #include <fc/io/raw.hpp>
 #include <algorithm>
 
@@ -98,3 +99,7 @@ namespace graphene { namespace protocol {
       return _calculated_merkle_root;
    }
 } }
+
+GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::protocol::block_header)
+GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::protocol::signed_block_header)
+GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::protocol::signed_block)

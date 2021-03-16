@@ -30,8 +30,8 @@ namespace graphene { namespace chain {
    class balance_object : public abstract_object<balance_object>
    {
       public:
-         static const uint8_t space_id = protocol_ids;
-         static const uint8_t type_id  = balance_object_type;
+         static constexpr uint8_t space_id = protocol_ids;
+         static constexpr uint8_t type_id  = balance_object_type;
 
          bool is_vesting_balance()const
          { return vesting_policy.valid(); }
@@ -73,5 +73,6 @@ namespace graphene { namespace chain {
 
 MAP_OBJECT_ID_TO_TYPE(graphene::chain::balance_object)
 
-FC_REFLECT_DERIVED( graphene::chain::balance_object, (graphene::db::object),
-                    (owner)(balance)(vesting_policy)(last_claim_date) )
+FC_REFLECT_TYPENAME( graphene::chain::balance_object )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::balance_object )

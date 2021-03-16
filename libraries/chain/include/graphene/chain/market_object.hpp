@@ -23,10 +23,9 @@
  */
 #pragma once
 
-#include <graphene/db/generic_index.hpp>
-#include <graphene/db/object.hpp>
-#include <graphene/protocol/asset.hpp>
 #include <graphene/chain/types.hpp>
+#include <graphene/db/generic_index.hpp>
+#include <graphene/protocol/asset.hpp>
 
 #include <boost/multi_index/composite_key.hpp>
 
@@ -45,8 +44,8 @@ using namespace graphene::db;
 class limit_order_object : public abstract_object<limit_order_object>
 {
    public:
-      static const uint8_t space_id = protocol_ids;
-      static const uint8_t type_id  = limit_order_object_type;
+      static constexpr uint8_t space_id = protocol_ids;
+      static constexpr uint8_t type_id  = limit_order_object_type;
 
       time_point_sec   expiration;
       account_id_type  seller;
@@ -71,6 +70,7 @@ class limit_order_object : public abstract_object<limit_order_object>
 struct by_price;
 struct by_expiration;
 struct by_account;
+struct by_account_price;
 typedef multi_index_container<
    limit_order_object,
    indexed_by<
@@ -88,7 +88,15 @@ typedef multi_index_container<
          >,
          composite_key_compare< std::greater<price>, std::less<object_id_type> >
       >,
+      // index used by APIs
       ordered_unique< tag<by_account>,
+         composite_key< limit_order_object,
+            member<limit_order_object, account_id_type, &limit_order_object::seller>,
+            member<object, object_id_type, &object::id>
+         >
+      >,
+      // index used by APIs
+      ordered_unique< tag<by_account_price>,
          composite_key< limit_order_object,
             member<limit_order_object, account_id_type, &limit_order_object::seller>,
             member<limit_order_object, price, &limit_order_object::sell_price>,
@@ -111,8 +119,8 @@ typedef generic_index<limit_order_object, limit_order_multi_index_type> limit_or
 class call_order_object : public abstract_object<call_order_object>
 {
    public:
-      static const uint8_t space_id = protocol_ids;
-      static const uint8_t type_id  = call_order_object_type;
+      static constexpr uint8_t space_id = protocol_ids;
+      static constexpr uint8_t type_id  = call_order_object_type;
 
       asset get_collateral()const { return asset( collateral, call_price.base.asset_id ); }
       asset get_debt()const { return asset( debt, debt_type() ); }
@@ -160,8 +168,8 @@ class call_order_object : public abstract_object<call_order_object>
 class force_settlement_object : public abstract_object<force_settlement_object>
 {
    public:
-      static const uint8_t space_id = protocol_ids;
-      static const uint8_t type_id  = force_settlement_object_type;
+      static constexpr uint8_t space_id = protocol_ids;
+      static constexpr uint8_t type_id  = force_settlement_object_type;
 
       account_id_type   owner;
       asset             balance;
@@ -181,8 +189,8 @@ class force_settlement_object : public abstract_object<force_settlement_object>
 class collateral_bid_object : public abstract_object<collateral_bid_object>
 {
    public:
-      static const uint8_t space_id = implementation_ids;
-      static const uint8_t type_id  = impl_collateral_bid_object_type;
+      static constexpr uint8_t space_id = implementation_ids;
+      static constexpr uint8_t type_id  = impl_collateral_bid_object_type;
 
       asset get_additional_collateral()const { return inv_swan_price.base; }
       asset get_debt_covered()const { return inv_swan_price.quote; }
@@ -276,18 +284,12 @@ MAP_OBJECT_ID_TO_TYPE(graphene::chain::call_order_object)
 MAP_OBJECT_ID_TO_TYPE(graphene::chain::force_settlement_object)
 MAP_OBJECT_ID_TO_TYPE(graphene::chain::collateral_bid_object)
 
-FC_REFLECT_DERIVED( graphene::chain::limit_order_object,
-                    (graphene::db::object),
-                    (expiration)(seller)(for_sale)(sell_price)(deferred_fee)(deferred_paid_fee)
-                  )
+FC_REFLECT_TYPENAME( graphene::chain::limit_order_object )
+FC_REFLECT_TYPENAME( graphene::chain::call_order_object )
+FC_REFLECT_TYPENAME( graphene::chain::force_settlement_object )
+FC_REFLECT_TYPENAME( graphene::chain::collateral_bid_object )
 
-FC_REFLECT_DERIVED( graphene::chain::call_order_object, (graphene::db::object),
-                    (borrower)(collateral)(debt)(call_price)(target_collateral_ratio) )
-
-FC_REFLECT_DERIVED( graphene::chain::force_settlement_object,
-                    (graphene::db::object),
-                    (owner)(balance)(settlement_date)
-                  )
-
-FC_REFLECT_DERIVED( graphene::chain::collateral_bid_object, (graphene::db::object),
-                    (bidder)(inv_swan_price) )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::limit_order_object )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::call_order_object )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::force_settlement_object )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::collateral_bid_object )

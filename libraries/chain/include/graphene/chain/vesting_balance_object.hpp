@@ -23,9 +23,9 @@
  */
 #pragma once
 
-#include <graphene/protocol/asset.hpp>
-#include <graphene/db/object.hpp>
 #include <graphene/db/generic_index.hpp>
+#include <graphene/protocol/asset.hpp>
+
 #include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/identity.hpp>
@@ -33,15 +33,9 @@
 #include <fc/static_variant.hpp>
 #include <fc/uint128.hpp>
 
-#include <algorithm>
-
-
-
 namespace graphene { namespace chain {
    using namespace graphene::db;
    using namespace graphene::protocol;
-
-   class vesting_balance_object;
 
    struct vesting_policy_context
    {
@@ -94,11 +88,11 @@ namespace graphene { namespace chain {
     */
    struct cdd_vesting_policy
    {
-      uint32_t                       vesting_seconds = 0;
-      fc::uint128_t                  coin_seconds_earned;
+      uint32_t                         vesting_seconds = 0;
+      fc::uint128_t                    coin_seconds_earned;
       /** while coindays may accrue over time, none may be claimed before first_claim date */
-      fc::time_point_sec             start_claim;
-      fc::time_point_sec             coin_seconds_earned_last_update;
+      fc::time_point_sec               start_claim;
+      fc::time_point_sec               coin_seconds_earned_last_update;
 
       /**
        * Compute coin_seconds_earned.  Used to
@@ -157,8 +151,8 @@ namespace graphene { namespace chain {
    class vesting_balance_object : public abstract_object<vesting_balance_object>
    {
       public:
-         static const uint8_t space_id = protocol_ids;
-         static const uint8_t type_id = vesting_balance_object_type;
+         static constexpr uint8_t space_id = protocol_ids;
+         static constexpr uint8_t type_id = vesting_balance_object_type;
 
          /// Account which owns and may withdraw from this vesting balance
          account_id_type owner;
@@ -308,3 +302,6 @@ FC_REFLECT_DERIVED(graphene::chain::vesting_balance_object, (graphene::db::objec
 
 FC_REFLECT_ENUM( graphene::chain::vesting_balance_type, (unspecified)(cashback)(worker)(witness)(market_fee_sharing) )
 
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::linear_vesting_policy )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::cdd_vesting_policy )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::chain::vesting_balance_object )

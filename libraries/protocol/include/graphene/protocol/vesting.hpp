@@ -23,6 +23,7 @@
  */
 #pragma once
 #include <graphene/protocol/base.hpp>
+#include <graphene/protocol/asset.hpp>
 
 namespace graphene { namespace protocol { 
 
@@ -111,6 +112,7 @@ namespace graphene { namespace protocol {
       {
          FC_ASSERT( fee.amount >= 0 );
          FC_ASSERT( amount.amount > 0 );
+         FC_ASSERT( owner != GRAPHENE_TEMP_ACCOUNT );
       }
    };
 
@@ -126,3 +128,8 @@ FC_REFLECT(graphene::protocol::linear_vesting_policy_initializer, (begin_timesta
 FC_REFLECT(graphene::protocol::cdd_vesting_policy_initializer, (start_claim)(vesting_seconds) )
 FC_REFLECT_EMPTY( graphene::protocol::instant_vesting_policy_initializer )
 FC_REFLECT_TYPENAME( graphene::protocol::vesting_policy_initializer )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::vesting_balance_create_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::vesting_balance_withdraw_operation::fee_parameters_type )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::vesting_balance_create_operation )
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::vesting_balance_withdraw_operation )

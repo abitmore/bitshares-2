@@ -24,12 +24,7 @@
 
 #pragma once
 
-#include <cassert>
-#include <cstdint>
-#include <string>
-
-#include <fc/container/flat.hpp>
-#include <fc/reflect/reflect.hpp>
+#include <graphene/protocol/types.hpp>
 
 namespace graphene { namespace protocol {
 
@@ -49,7 +44,7 @@ namespace graphene { namespace protocol {
  *
  * In JSON, a vote_id_type is represented as a string "type:instance", i.e. "1:5" would be type 1 and instance 5.
  *
- * @note In the Graphene protocol, vote_id_type instances are unique across types; that is to say, if an object of
+ * @note In the BitShares protocol, vote_id_type instances are unique across types; that is to say, if an object of
  * type 1 has instance 4, an object of type 0 may not also have instance 4. In other words, the type is not a
  * namespace for instances; it is only an informational field.
  */
@@ -146,3 +141,5 @@ FC_REFLECT_TYPENAME( fc::flat_set<graphene::protocol::vote_id_type> )
 
 FC_REFLECT_ENUM( graphene::protocol::vote_id_type::vote_type, (witness)(committee)(worker)(VOTE_TYPE_COUNT) )
 FC_REFLECT( graphene::protocol::vote_id_type, (content) )
+
+GRAPHENE_DECLARE_EXTERNAL_SERIALIZATION( graphene::protocol::vote_id_type )
