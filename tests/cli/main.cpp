@@ -437,6 +437,8 @@ BOOST_FIXTURE_TEST_CASE( uia_tests, cli_fixture )
 
       INVOKE(upgrade_nathan_account);
 
+      BOOST_CHECK(generate_block(app1));
+
       account_object nathan_acct = con.wallet_api_ptr->get_account("nathan");
 
       auto formatters = con.wallet_api_ptr->get_result_formatters();
@@ -449,6 +451,8 @@ BOOST_FIXTURE_TEST_CASE( uia_tests, cli_fixture )
       auto check_nathan_last_history = [&]( string keyword ) {
          check_account_last_history( "nathan", keyword );
       };
+
+      check_nathan_last_history( "account_upgrade_operation" );
 
       // Create new asset called BOBCOIN
       {
@@ -466,6 +470,14 @@ BOOST_FIXTURE_TEST_CASE( uia_tests, cli_fixture )
                   fc::variant(result, FC_PACK_MAX_DEPTH), fc::variants());
             BOOST_CHECK( output.find("BOBCOIN") != string::npos );
          }
+
+         BOOST_CHECK_THROW( con.wallet_api_ptr->get_asset_name("BOBCOI"), fc::exception );
+         BOOST_CHECK_EQUAL( con.wallet_api_ptr->get_asset_name("BOBCOIN"), "BOBCOIN" );
+         BOOST_CHECK_EQUAL( con.wallet_api_ptr->get_asset_symbol("BOBCOIN"), "BOBCOIN" );
+
+         BOOST_CHECK_THROW( con.wallet_api_ptr->get_account_name("nath"), fc::exception );
+         BOOST_CHECK_EQUAL( con.wallet_api_ptr->get_account_name("nathan"), "nathan" );
+         BOOST_CHECK( con.wallet_api_ptr->get_account_id("nathan") == con.wallet_api_ptr->get_account("nathan").id );
       }
       BOOST_CHECK(generate_block(app1));
 
@@ -473,6 +485,8 @@ BOOST_FIXTURE_TEST_CASE( uia_tests, cli_fixture )
       check_nathan_last_history( "BOBCOIN" );
 
       auto bobcoin = con.wallet_api_ptr->get_asset("BOBCOIN");
+
+      BOOST_CHECK( con.wallet_api_ptr->get_asset_id("BOBCOIN") == bobcoin.id );
 
       bool balance_formatter_tested = false;
       auto check_bobcoin_balance = [&](string account, int64_t amount) {
@@ -517,7 +531,7 @@ BOOST_FIXTURE_TEST_CASE( uia_tests, cli_fixture )
       check_bobcoin_balance( "init0", 30000 );
 
       {
-         // Override transfer
+         // Override transfer, and test sign_memo and read_memo by the way
          BOOST_TEST_MESSAGE("Override-transfer BOBCOIN from init0");
          auto handle = con.wallet_api_ptr->begin_builder_transaction();
          override_transfer_operation op;
@@ -525,13 +539,29 @@ BOOST_FIXTURE_TEST_CASE( uia_tests, cli_fixture )
          op.from = con.wallet_api_ptr->get_account( "init0" ).id;
          op.to = con.wallet_api_ptr->get_account( "nathan" ).id;
          op.amount = bobcoin.amount(10000);
-         op.memo = con.wallet_api_ptr->sign_memo( "nathan", "init0", "get back some coin" );
+
+         const auto test_bki = con.wallet_api_ptr->suggest_brain_key();
+         auto test_pubkey = fc::json::to_string( test_bki.pub_key );
+         test_pubkey = test_pubkey.substr( 1, test_pubkey.size() - 2 );
+         idump( (test_pubkey) );
+         op.memo = con.wallet_api_ptr->sign_memo( "nathan", test_pubkey, "get back some coin" );
+         idump( (op.memo) );
          con.wallet_api_ptr->add_operation_to_builder_transaction( handle, op );
          con.wallet_api_ptr->set_fees_on_builder_transaction( handle, "1.3.0" );
          con.wallet_api_ptr->sign_builder_transaction( handle, true );
 
          auto memo = con.wallet_api_ptr->read_memo( *op.memo );
          BOOST_CHECK_EQUAL( memo, "get back some coin" );
+
+         op.memo = con.wallet_api_ptr->sign_memo( test_pubkey, "nathan", "another test" );
+         idump( (op.memo) );
+         memo = con.wallet_api_ptr->read_memo( *op.memo );
+         BOOST_CHECK_EQUAL( memo, "another test" );
+
+         BOOST_CHECK_THROW( con.wallet_api_ptr->sign_memo( "non-exist-account-or-label", "nathan", "some text" ),
+                            fc::exception );
+         BOOST_CHECK_THROW( con.wallet_api_ptr->sign_memo( "nathan", "non-exist-account-or-label", "some text" ),
+                            fc::exception );
       }
       BOOST_CHECK(generate_block(app1));
 
@@ -875,6 +905,24 @@ BOOST_FIXTURE_TEST_CASE( cli_vote_for_2_witnesses, cli_fixture )
       int init1_last_votes = init1_obj.total_votes;
       if( !is_hf2262_passed(app1) )
          BOOST_CHECK(init1_last_votes > init1_start_votes);
+
+      {
+         auto history = con.wallet_api_ptr->get_account_history_by_operations(
+                              "jmjatlanta", {6}, 0, 1); // 6 - account_update_operation
+         BOOST_REQUIRE_GT( history.details.size(), 0 );
+         BOOST_CHECK( history.details[0].description.find( "Update Account 'jmjatlanta'" ) != string::npos );
+
+         // Testing result formatter
+         auto formatters = con.wallet_api_ptr->get_result_formatters();
+         if( formatters.find("get_account_history_by_operations") != formatters.end() )
+         {
+            BOOST_TEST_MESSAGE("Testing formatter of get_account_history_by_operations");
+            string output = formatters["get_account_history_by_operations"](
+                  fc::variant(history, FC_PACK_MAX_DEPTH), fc::variants());
+            BOOST_CHECK( output.find("Update Account 'jmjatlanta'") != string::npos );
+         }
+      }
+
    } catch( fc::exception& e ) {
       edump((e.to_detail_string()));
       throw;
@@ -1668,6 +1716,20 @@ BOOST_AUTO_TEST_CASE( cli_create_htlc )
          BOOST_CHECK(generate_block(app1));
       }
 
+      // test operation_printer
+      auto hist = con.wallet_api_ptr->get_account_history("alice", 10);
+      for(size_t i = 0; i < hist.size(); ++i)
+      {
+         auto obj = hist[i];
+         std::stringstream ss;
+         ss << "Description: " << obj.description << "\n";
+         auto str = ss.str();
+         BOOST_TEST_MESSAGE( str );
+         if (i == 3 || i == 4)
+         {
+            BOOST_CHECK( str.find("SHA256 8a45f62f47") != std::string::npos );
+         }
+      }
    } catch( fc::exception& e ) {
       edump((e.to_detail_string()));
       throw;
