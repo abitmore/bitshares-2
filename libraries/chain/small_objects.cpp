@@ -36,6 +36,7 @@
 #include <graphene/chain/htlc_object.hpp>
 #include <graphene/chain/liquidity_pool_object.hpp>
 #include <graphene/chain/operation_history_object.hpp>
+#include <graphene/chain/samet_fund_object.hpp>
 #include <graphene/chain/special_authority_object.hpp>
 #include <graphene/chain/transaction_history_object.hpp>
 #include <graphene/chain/withdraw_permission_object.hpp>
@@ -200,6 +201,13 @@ FC_REFLECT_DERIVED_NO_TYPENAME( graphene::chain::custom_authority_object, (graph
                                (account)(enabled)(valid_from)(valid_to)(operation_type)
                                (auth)(restrictions)(restriction_counter) )
 
+FC_REFLECT_DERIVED_NO_TYPENAME( graphene::chain::samet_fund_object, (graphene::db::object),
+                    (owner_account)
+                    (asset_type)
+                    (balance)
+                    (fee_rate)
+                    (unpaid_amount)
+                  )
 
 GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::chain::balance_object )
 GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::chain::block_summary_object )
@@ -224,3 +232,4 @@ GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::chain::witness_schedule_obj
 GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::chain::worker_object )
 GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::chain::custom_authority_object )
 GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::chain::liquidity_pool_object )
+GRAPHENE_IMPLEMENT_EXTERNAL_SERIALIZATION( graphene::chain::samet_fund_object )
